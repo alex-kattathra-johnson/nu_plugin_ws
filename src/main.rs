@@ -1,8 +1,11 @@
 use std::time::Duration;
 
-use nu_plugin::{EvaluatedCall, JsonSerializer, serve_plugin};
+use nu_plugin::{serve_plugin, EvaluatedCall, JsonSerializer};
 use nu_plugin::{EngineInterface, Plugin, PluginCommand};
-use nu_protocol::{ByteStream, ByteStreamType, Category, LabeledError, PipelineData, Signature, SyntaxShape, Type, Value};
+use nu_protocol::{
+    ByteStream, ByteStreamType, Category, LabeledError, PipelineData, Signature, SyntaxShape, Type,
+    Value,
+};
 
 mod ws;
 use ws::client::{connect, http_parse_url, request_headers};
@@ -15,9 +18,7 @@ impl Plugin for WebSocketPlugin {
     }
 
     fn commands(&self) -> Vec<Box<dyn PluginCommand<Plugin = Self>>> {
-        vec![
-            Box::new(WebSocket),
-        ]
+        vec![Box::new(WebSocket)]
     }
 }
 
@@ -80,11 +81,7 @@ impl PluginCommand for WebSocket {
                         .expect("Timeout should be set to duration") as u64,
                 )
             });
-            if let Some(cr) = connect(
-                requested_url,
-                timeout,
-                request_headers(headers)?,
-            ) {
+            if let Some(cr) = connect(requested_url, timeout, request_headers(headers)?) {
                 let reader = Box::new(cr);
                 return Ok(PipelineData::ByteStream(
                     ByteStream::read(

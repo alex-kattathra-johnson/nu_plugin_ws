@@ -100,17 +100,17 @@ pub fn connect(
                             tungstenite::Message::Text(msg) => {
                                 if tx.send(msg.as_bytes().to_vec()).is_err() {
                                     websocket.close(Some(tungstenite::protocol::CloseFrame{
-                                    code: tungstenite::protocol::frame::coding::CloseCode::Normal,
-                                    reason: std::borrow::Cow::Borrowed("byte stream closed"),
-                                })).expect("Could not close connection")
+                                        code: tungstenite::protocol::frame::coding::CloseCode::Normal,
+                                        reason: std::borrow::Cow::Borrowed("byte stream closed"),
+                                    })).expect("Could not close connection")
                                 }
                             }
                             tungstenite::Message::Binary(msg) => {
                                 if tx.send(msg).is_err() {
                                     websocket.close(Some(tungstenite::protocol::CloseFrame{
-                                    code: tungstenite::protocol::frame::coding::CloseCode::Normal,
-                                    reason: std::borrow::Cow::Borrowed("byte stream closed"),
-                                })).expect("Could not close connection")
+                                        code: tungstenite::protocol::frame::coding::CloseCode::Normal,
+                                        reason: std::borrow::Cow::Borrowed("byte stream closed"),
+                                    })).expect("Could not close connection")
                                 }
                             }
                             tungstenite::Message::Close(..) => {
