@@ -1,0 +1,15 @@
+[package]
+authors = ["Alex Johnson <alex.kattathra.johnson@gmail.com>"]
+homepage = "https://github.com/alex-kattathra-johnson/nu_plugin_ws"
+readme = "README.md"
+license = "MIT"
+name = "nu_plugin_ws"
+description = "A Nushell plugin for easily streaming output from websocket endpoints"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nu-plugin = "0.99.1"
+nu-protocol = "0.99.1"
+tungstenite = { version = "0.24.0", features = ["native-tls"] }
+url = "2.5.3"
