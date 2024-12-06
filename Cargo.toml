@@ -9,7 +9,7 @@ version = "0.1.2"
 edition = "2021"
 
 [dependencies]
-nu-plugin = "0.99.1"
-nu-protocol = "0.99.1"
+nu-plugin = "0.100.0"
+nu-protocol = "0.100.0"
 tungstenite = { version = "0.24.0", features = ["native-tls"] }
 url = "2.5.3"
