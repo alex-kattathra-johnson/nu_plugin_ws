@@ -5,7 +5,7 @@ readme = "README.md"
 license = "MIT"
 name = "nu_plugin_ws"
 description = "A Nushell plugin for easily streaming output from websocket endpoints"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
