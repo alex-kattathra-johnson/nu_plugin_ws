@@ -1184,7 +1184,7 @@ dependencies = [
 
 [[package]]
 name = "nu_plugin_ws"
-version = "0.1.2"
+version = "0.2.2"
 dependencies = [
  "nu-plugin",
  "nu-protocol",
