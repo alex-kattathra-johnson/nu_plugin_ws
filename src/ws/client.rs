@@ -134,7 +134,7 @@ pub fn connect(
     signals: Signals,
     span: Span,
 ) -> Option<(WebSocketClient, WebSocketConnection)> {
-    log::trace!("Building WebSocket request for: {}", url);
+    log::trace!("Building WebSocket request for: {url}");
 
     let mut builder = ClientRequestBuilder::new(url.as_str().parse().ok()?);
     let origin = format!(
@@ -144,12 +144,12 @@ pub fn connect(
         url.port().unwrap_or_default()
     );
 
-    log::trace!("Setting Origin header to: {}", origin);
+    log::trace!("Setting Origin header to: {origin}");
 
     builder = builder.with_header("Origin", origin);
 
     for (k, v) in headers {
-        log::trace!("Adding header: {} = {}", k, v);
+        log::trace!("Adding header: {k} = {v}");
         builder = builder.with_header(k, v);
     }
 
@@ -179,7 +179,7 @@ pub fn connect(
                             Ok(msg) => match msg {
                                 tungstenite::Message::Text(msg) => {
                                     log::debug!("Received Text message: {} bytes", msg.len());
-                                    log::trace!("Text content: {:?}", msg);
+                                    log::trace!("Text content: {msg:?}");
                                     // Add newline after each WebSocket message for proper line separation
                                     let mut data = msg.into_bytes();
                                     data.push(b'\n');
@@ -213,12 +213,12 @@ pub fn connect(
                                     return;
                                 }
                                 _ => {
-                                    log::trace!("Received other message type: {:?}", msg);
+                                    log::trace!("Received other message type: {msg:?}");
                                     continue;
                                 }
                             },
                             Err(e) => {
-                                log::error!("WebSocket read error: {:?}", e);
+                                log::error!("WebSocket read error: {e:?}");
                                 log::debug!("WebSocket reader thread exiting due to error");
                                 drop(tx_read);
                                 return;
@@ -236,7 +236,7 @@ pub fn connect(
             ))
         }
         Err(e) => {
-            log::error!("Failed to connect to WebSocket: {:?}", e);
+            log::error!("Failed to connect to WebSocket: {e:?}");
             None
         }
     }

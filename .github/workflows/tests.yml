@@ -46,12 +46,6 @@ jobs:
     - name: Build
       run: cargo build --verbose
 
-    - name: Run unit tests
-      run: cargo test --test unit_tests --verbose
-
-    - name: Run integration tests
-      run: cargo test --test integration_tests --verbose
-
     - name: Run all tests
       run: cargo test --verbose
 
@@ -76,10 +70,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Rust 1.70 (MSRV)
+    - name: Install Rust 1.88 (MSRV)
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain: 1.70.0
+        toolchain: 1.88.0
 
     - name: Check that it builds
       run: cargo build --verbose

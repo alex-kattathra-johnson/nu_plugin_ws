@@ -105,7 +105,7 @@ impl PluginCommand for WebSocket {
 
         let (_, requested_url) = http_parse_url(call, span, url)?;
 
-        log::debug!("Connecting to: {}", requested_url);
+        log::debug!("Connecting to: {requested_url}");
 
         if ["ws", "wss"].contains(&requested_url.scheme()) {
             let timeout = timeout.map(|ref val| {
@@ -113,7 +113,7 @@ impl PluginCommand for WebSocket {
                     val.as_duration()
                         .expect("Timeout should be set to duration") as u64,
                 );
-                log::trace!("Setting timeout to: {:?}", duration);
+                log::trace!("Setting timeout to: {duration:?}");
                 duration
             });
 
@@ -154,7 +154,7 @@ impl PluginCommand for WebSocket {
                         // Try to send as Text if it's valid UTF-8, otherwise send as Binary
                         let message = match String::from_utf8(data.clone()) {
                             Ok(text) => {
-                                log::debug!("Sending as Text message: {:?}", text);
+                                log::debug!("Sending as Text message: {text:?}");
                                 tungstenite::Message::Text(text)
                             }
                             Err(_) => {
@@ -164,7 +164,7 @@ impl PluginCommand for WebSocket {
                         };
 
                         ws.send(message).map_err(|e| {
-                            LabeledError::new(format!("Failed to send WebSocket message: {}", e))
+                            LabeledError::new(format!("Failed to send WebSocket message: {e}"))
                         })?;
 
                         log::debug!("Message sent successfully, now starting to receive");
@@ -186,7 +186,7 @@ impl PluginCommand for WebSocket {
                         };
 
                         ws.send(message).map_err(|e| {
-                            LabeledError::new(format!("Failed to send WebSocket message: {}", e))
+                            LabeledError::new(format!("Failed to send WebSocket message: {e}"))
                         })?;
 
                         log::debug!(

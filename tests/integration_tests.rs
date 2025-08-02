@@ -117,22 +117,20 @@ fn test_websocket_public_echo_service() -> Result<(), ShellError> {
                 // Should receive our message back with newline
                 assert!(
                     val.contains("Hello WebSocket!"),
-                    "Expected echo response, got: {}",
-                    val
+                    "Expected echo response, got: {val}"
                 );
                 println!(
                     "✅ SUCCESS: Received echo from public WebSocket service: {}",
                     val.trim()
                 );
             } else {
-                println!("⚠️  Got non-string response: {:?}", value);
+                println!("⚠️  Got non-string response: {value:?}");
             }
             Ok(())
         }
         Err(e) => {
             println!(
-                "⚠️  Public WebSocket test failed (this may be due to network/firewall): {:?}",
-                e
+                "⚠️  Public WebSocket test failed (this may be due to network/firewall): {e:?}"
             );
             // Don't fail the test since public services may be unreachable in some environments
             Ok(())
@@ -153,8 +151,7 @@ fn test_websocket_alternative_public_service() -> Result<(), ShellError> {
             if let nu_protocol::Value::String { val, .. } = value {
                 assert!(
                     val.contains("test message"),
-                    "Expected echo response, got: {}",
-                    val
+                    "Expected echo response, got: {val}"
                 );
                 println!(
                     "✅ SUCCESS: Received echo from ws://echo.websocket.org: {}",
@@ -164,10 +161,7 @@ fn test_websocket_alternative_public_service() -> Result<(), ShellError> {
             Ok(())
         }
         Err(e) => {
-            println!(
-                "⚠️  Public WebSocket test failed (network/firewall): {:?}",
-                e
-            );
+            println!("⚠️  Public WebSocket test failed (network/firewall): {e:?}");
             Ok(()) // Don't fail test due to network issues
         }
     }
@@ -194,10 +188,7 @@ fn test_websocket_binary_public_service() -> Result<(), ShellError> {
             Ok(())
         }
         Err(e) => {
-            println!(
-                "⚠️  Binary WebSocket test failed (network/firewall): {:?}",
-                e
-            );
+            println!("⚠️  Binary WebSocket test failed (network/firewall): {e:?}");
             Ok(())
         }
     }
@@ -213,14 +204,11 @@ fn test_websocket_listen_only_mode() -> Result<(), ShellError> {
     match result {
         Ok(pipeline_data) => {
             let value = pipeline_data.into_value(nu_protocol::Span::test_data())?;
-            println!("✅ Listen-only mode completed: {:?}", value);
+            println!("✅ Listen-only mode completed: {value:?}");
             Ok(())
         }
         Err(e) => {
-            println!(
-                "⚠️  Listen-only test failed (expected for echo services): {:?}",
-                e
-            );
+            println!("⚠️  Listen-only test failed (expected for echo services): {e:?}");
             Ok(())
         }
     }
@@ -309,10 +297,7 @@ fn test_websocket_empty_string_input() -> Result<(), ShellError> {
 fn test_websocket_large_string_input() -> Result<(), ShellError> {
     // Create a 10KB string
     let large_string = "x".repeat(10_000);
-    let command = format!(
-        r#""{}" | ws "ws://127.0.0.1:1" --max-time 100ms"#,
-        large_string
-    );
+    let command = format!(r#""{large_string}" | ws "ws://127.0.0.1:1" --max-time 100ms"#);
 
     let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(&command);
 
