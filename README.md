@@ -37,3 +37,15 @@ plugin add target/release/nu_plugin_ws
 # Activates the plugin
 plugin use ws
 ```
+
+## Development
+
+This project uses pre-commit hooks to ensure code quality. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
+
+Quick setup:
+```bash
+# Install pre-commit
+pip install pre-commit
+# Install the git hooks
+pre-commit install
+```
