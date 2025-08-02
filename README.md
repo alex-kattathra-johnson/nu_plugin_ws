@@ -38,6 +38,62 @@ plugin add target/release/nu_plugin_ws
 plugin use ws
 ```
 
+## Usage
+
+### Basic Connection
+
+Connect to a WebSocket and stream data:
+
+```bash
+# Connect and listen only
+ws "wss://echo.websocket.org"
+
+# With timeout
+ws "wss://echo.websocket.org" --max-time 10sec
+```
+
+### Sending Messages
+
+Send text messages by piping string data:
+
+```bash
+# Send a text message
+echo "Hello WebSocket" | ws "wss://echo.websocket.org"
+
+# Send JSON data
+echo '{"message": "hello", "type": "text"}' | ws "wss://localhost:8080/chat"
+
+# Send with custom headers
+echo "authenticated message" | ws "wss://api.example.com" --headers {Authorization: "Bearer token123"}
+```
+
+Send binary data:
+
+```bash
+# Send binary data (hex format)
+0x[48656c6c6f] | ws "wss://echo.websocket.org"
+
+# Send file contents as binary
+open file.bin | ws "wss://echo.websocket.org"
+```
+
+### Advanced Usage
+
+```bash
+# Multiple custom headers
+ws "wss://api.example.com" --headers {
+  "Authorization": "Bearer token123",
+  "X-Client-ID": "my-client",
+  "X-Version": "1.0"
+}
+
+# With timeout and verbose logging
+echo "test message" | ws "wss://echo.websocket.org" --max-time 30sec --verbose 3
+
+# Handle special characters and Unicode
+echo "Hello 🌍 测试 русский" | ws "wss://echo.websocket.org"
+```
+
 ## Development
 
 This project uses pre-commit hooks to ensure code quality. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
