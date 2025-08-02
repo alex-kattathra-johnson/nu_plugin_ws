@@ -1,7 +1,7 @@
 # nu_plugin_ws
 
 [![Crates.io Version](https://img.shields.io/crates/v/nu_plugin_ws?color=blue)](https://crates.io/crates/nu_plugin_ws)
-[![Nushell](https://img.shields.io/badge/Nushell-v0.105.1-blue)](https://nushell.sh)
+[![Nushell](https://img.shields.io/badge/Nushell-v0.106.1-blue)](https://nushell.sh)
 
 A plugin for [Nushell](https://nushell.sh), a cross-platform shell and scripting language. This plugin adds support for
 streaming from a websocket.
