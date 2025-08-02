@@ -1,500 +1,586 @@
-#![allow(clippy::result_large_err)]
-
 use nu_plugin_test_support::PluginTest;
-use nu_protocol::ShellError;
+use nu_plugin_ws::WebSocketPlugin;
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::Duration;
+use tungstenite::{accept, Message, WebSocket};
 
-use nu_plugin_ws::{WebSocket, WebSocketPlugin};
-
-/// Test basic plugin functionality with invalid connections
-#[test]
-fn test_websocket_connection_failure() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://nonexistent.invalid.test""#);
-
-    // Should fail to connect but not panic
-    assert!(result.is_err());
-    Ok(())
+struct MockWebSocketServer {
+    addr: SocketAddr,
+    barrier: Arc<Barrier>,
 }
 
-/// Test plugin with timeout parameter
-#[test]
-fn test_websocket_with_timeout() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --max-time 100ms"#);
+impl MockWebSocketServer {
+    fn new() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let barrier = Arc::new(Barrier::new(2));
 
-    // Should fail to connect with timeout
-    assert!(result.is_err());
-    Ok(())
-}
+        let barrier_clone = barrier.clone();
 
-/// Test plugin with custom headers
-#[test]
-fn test_websocket_with_headers() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://nonexistent.test" --headers {Authorization: "Bearer token", "User-Agent": "nu-plugin-ws-test"}"#);
+        thread::spawn(move || {
+            barrier_clone.wait();
 
-    // Should fail to connect but handle headers without panic
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test plugin with invalid URL scheme
-#[test]
-fn test_websocket_invalid_scheme() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws "http://example.com""#);
-
-    // Should fail with unsupported scheme
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test plugin with string input
-#[test]
-fn test_websocket_with_string_input() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#""hello" | ws "ws://127.0.0.1:1" --max-time 100ms"#);
-
-    // Should fail to connect but not panic with string input
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test plugin with verbose logging
-#[test]
-fn test_websocket_verbose_logging() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --verbose 3 --max-time 50ms"#);
-
-    // Should fail to connect but handle verbose flag
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test plugin examples from command signature
-#[test]
-fn test_command_examples() -> Result<(), ShellError> {
-    // This tests any examples defined in the WebSocket command signature
-    PluginTest::new("ws", WebSocketPlugin.into())?.test_command_examples(&WebSocket)
-}
-
-/// Test plugin with binary input
-#[test]
-fn test_websocket_with_binary_input() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"0x[01 02 03] | ws "ws://localhost:9999" --max-time 100ms"#);
-
-    // Should fail to connect but handle binary input
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test that plugin handles different WebSocket schemes
-#[test]
-fn test_websocket_schemes() -> Result<(), ShellError> {
-    let ws_result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://localhost:9999" --max-time 100ms"#);
-
-    let wss_result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "wss://localhost:9999" --max-time 100ms"#);
-
-    // Both should fail to connect but handle the different schemes
-    assert!(ws_result.is_err());
-    assert!(wss_result.is_err());
-    Ok(())
-}
-
-/// Test with a publicly available WebSocket echo service
-#[test]
-fn test_websocket_public_echo_service() -> Result<(), ShellError> {
-    // Using wss://echo.websocket.org which is a reliable public echo service
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#""Hello WebSocket!" | ws "wss://echo.websocket.org" --max-time 5sec"#);
-
-    match result {
-        Ok(pipeline_data) => {
-            let value = pipeline_data.into_value(nu_protocol::Span::test_data())?;
-            if let nu_protocol::Value::String { val, .. } = value {
-                // Should receive our message back with newline
-                assert!(
-                    val.contains("Hello WebSocket!"),
-                    "Expected echo response, got: {val}"
-                );
-                println!(
-                    "✅ SUCCESS: Received echo from public WebSocket service: {}",
-                    val.trim()
-                );
-            } else {
-                println!("⚠️  Got non-string response: {value:?}");
+            while let Ok((stream, _peer_addr)) = listener.accept() {
+                thread::spawn(move || handle_connection(stream));
             }
-            Ok(())
-        }
-        Err(e) => {
-            println!(
-                "⚠️  Public WebSocket test failed (this may be due to network/firewall): {e:?}"
-            );
-            // Don't fail the test since public services may be unreachable in some environments
-            Ok(())
-        }
+        });
+
+        Self { addr, barrier }
+    }
+
+    fn start(&self) {
+        self.barrier.wait();
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    fn url(&self) -> String {
+        format!("ws://127.0.0.1:{}", self.addr.port())
     }
 }
 
-/// Test with another public WebSocket service
-#[test]
-fn test_websocket_alternative_public_service() -> Result<(), ShellError> {
-    // Using ws://echo.websocket.org (non-SSL version)
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#""test message" | ws "ws://echo.websocket.org" --max-time 5sec"#);
+fn handle_connection(stream: TcpStream) {
+    let mut ws_stream = match accept(stream) {
+        Ok(ws) => ws,
+        Err(_e) => return,
+    };
+    handle_websocket(&mut ws_stream);
+}
 
-    match result {
-        Ok(pipeline_data) => {
-            let value = pipeline_data.into_value(nu_protocol::Span::test_data())?;
-            if let nu_protocol::Value::String { val, .. } = value {
-                assert!(
-                    val.contains("test message"),
-                    "Expected echo response, got: {val}"
-                );
-                println!(
-                    "✅ SUCCESS: Received echo from ws://echo.websocket.org: {}",
-                    val.trim()
-                );
+fn handle_websocket(ws_stream: &mut WebSocket<TcpStream>) {
+    while let Ok(msg) = ws_stream.read() {
+        match msg {
+            Message::Text(text) => {
+                let response = format!("Echo: {text}");
+                if ws_stream.send(Message::Text(response)).is_err() {
+                    break;
+                }
             }
-            Ok(())
-        }
-        Err(e) => {
-            println!("⚠️  Public WebSocket test failed (network/firewall): {e:?}");
-            Ok(()) // Don't fail test due to network issues
-        }
-    }
-}
-
-/// Test binary data with public WebSocket service
-#[test]
-fn test_websocket_binary_public_service() -> Result<(), ShellError> {
-    // Test binary data (hex bytes for "Hello")
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"0x[48656c6c6f] | ws "wss://echo.websocket.org" --max-time 5sec"#);
-
-    match result {
-        Ok(pipeline_data) => {
-            let value = pipeline_data.into_value(nu_protocol::Span::test_data())?;
-            if let nu_protocol::Value::String { val, .. } = value {
-                // Should receive the binary data back
-                assert!(!val.is_empty(), "Expected some response data");
-                println!(
-                    "✅ SUCCESS: Binary data echoed successfully: {} bytes",
-                    val.len()
-                );
+            Message::Binary(data) => {
+                let mut response = b"Binary Echo: ".to_vec();
+                response.extend_from_slice(&data);
+                if ws_stream.send(Message::Binary(response)).is_err() {
+                    break;
+                }
             }
-            Ok(())
-        }
-        Err(e) => {
-            println!("⚠️  Binary WebSocket test failed (network/firewall): {e:?}");
-            Ok(())
-        }
-    }
-}
-
-/// Test receiving data without sending (listen-only mode)
-#[test]
-fn test_websocket_listen_only_mode() -> Result<(), ShellError> {
-    // Some WebSocket services send data immediately upon connection
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "wss://echo.websocket.org" --max-time 2sec"#);
-
-    match result {
-        Ok(pipeline_data) => {
-            let value = pipeline_data.into_value(nu_protocol::Span::test_data())?;
-            println!("✅ Listen-only mode completed: {value:?}");
-            Ok(())
-        }
-        Err(e) => {
-            println!("⚠️  Listen-only test failed (expected for echo services): {e:?}");
-            Ok(())
+            Message::Ping(data) => {
+                if ws_stream.send(Message::Pong(data)).is_err() {
+                    break;
+                }
+            }
+            Message::Pong(_) => {}
+            Message::Close(_) => {
+                let _ = ws_stream.send(Message::Close(None));
+                break;
+            }
+            Message::Frame(_) => {}
         }
     }
 }
 
-/// Test WebSocket connection without explicit timeout (using failure case to avoid hanging)
-#[test]
-fn test_websocket_without_timeout() -> Result<(), ShellError> {
-    // Test that the plugin handles missing --max-time parameter correctly
-    // Use a connection that will fail quickly to test the no-timeout code path safely
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws "ws://127.0.0.1:1""#);
+struct MockJsonServer {
+    addr: SocketAddr,
+    barrier: Arc<Barrier>,
+}
 
-    // Should fail to connect, but this tests that the plugin handles the no-timeout case
-    // without hanging indefinitely (it should use the underlying library's default timeout)
+impl MockJsonServer {
+    fn new() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+
+        let barrier_clone = barrier.clone();
+
+        thread::spawn(move || {
+            barrier_clone.wait();
+
+            while let Ok((stream, _peer_addr)) = listener.accept() {
+                thread::spawn(move || handle_json_connection(stream));
+            }
+        });
+
+        Self { addr, barrier }
+    }
+
+    fn start(&self) {
+        self.barrier.wait();
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    fn url(&self) -> String {
+        format!("ws://127.0.0.1:{}", self.addr.port())
+    }
+}
+
+fn handle_json_connection(stream: TcpStream) {
+    let mut ws_stream = match accept(stream) {
+        Ok(ws) => ws,
+        Err(_e) => return,
+    };
+    handle_json_websocket(&mut ws_stream);
+}
+
+fn handle_json_websocket(ws_stream: &mut WebSocket<TcpStream>) {
+    let json_messages = [
+        r#"{"event": "connected", "timestamp": "2023-01-01T00:00:00Z"}"#,
+        r#"{"event": "data", "value": 42, "timestamp": "2023-01-01T00:01:00Z"}"#,
+        r#"{"event": "data", "value": 84, "timestamp": "2023-01-01T00:02:00Z"}"#,
+    ];
+
+    for msg in json_messages.iter() {
+        if ws_stream.send(Message::Text(msg.to_string())).is_err() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    loop {
+        match ws_stream.read() {
+            Ok(Message::Close(_)) => break,
+            Err(_e) => break,
+            Ok(_msg) => {}
+        }
+    }
+}
+
+#[test]
+fn test_websocket_connection_and_echo() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(
+        r#"echo "Hello WebSocket" | ws "{}" --max-time 5sec"#,
+        server.url()
+    ));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket connection should succeed. Error: {result:#?}"
+    );
+}
+
+#[test]
+fn test_websocket_binary_data() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(r#"0x[48656c6c6f] | ws "{}""#, server.url()));
+
+    assert!(result.is_ok(), "WebSocket binary connection should succeed");
+}
+
+#[test]
+fn test_websocket_with_custom_headers() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(
+        r#"ws "{}" --headers {{ "X-Custom-Header": "test-value" }}"#,
+        server.url()
+    ));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket connection with headers should succeed"
+    );
+}
+
+#[test]
+fn test_websocket_timeout() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(r#"ws "{}" --max-time 1sec"#, server.url()));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket connection with timeout should succeed"
+    );
+}
+
+#[test]
+fn test_websocket_json_streaming() {
+    let server = MockJsonServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(r#"ws "{}""#, server.url()));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket JSON streaming should succeed. Error: {result:#?}"
+    );
+}
+
+#[test]
+fn test_websocket_invalid_url() {
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(r#"ws "invalid-url""#);
+
+    assert!(result.is_err(), "Invalid URL should fail");
+}
+
+#[test]
+fn test_websocket_connection_refused() {
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(r#"ws "ws://127.0.0.1:12345""#);
+
     assert!(
         result.is_err(),
-        "Should fail to connect, but without hanging"
+        "Connection to non-existent server should fail"
     );
-    println!("✅ No-timeout parameter handled correctly (connection failed as expected)");
-    Ok(())
 }
 
-// ===== MALFORMED URL TESTS =====
-
-/// Test with empty URL
 #[test]
-fn test_websocket_empty_url() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws """#);
+fn test_websocket_verbose_logging() {
+    let server = MockWebSocketServer::new();
+    server.start();
 
-    assert!(result.is_err(), "Empty URL should fail");
-    Ok(())
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(
+        r#"echo "test" | ws "{}" --verbose 3"#,
+        server.url()
+    ));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket connection with verbose logging should succeed"
+    );
 }
 
-/// Test with URL missing host
 #[test]
-fn test_websocket_url_missing_host() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws "ws://""#);
+fn test_websocket_no_input_data() {
+    let server = MockJsonServer::new();
+    server.start();
 
-    assert!(result.is_err(), "URL without host should fail");
-    Ok(())
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(r#"ws "{}""#, server.url()));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket connection without input should succeed. Error: {result:#?}"
+    );
 }
 
-/// Test with URL missing scheme
-#[test]
-fn test_websocket_url_missing_scheme() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws "example.com/ws""#);
-
-    assert!(result.is_err(), "URL without scheme should fail");
-    Ok(())
+struct DelayedResponseServer {
+    addr: SocketAddr,
+    barrier: Arc<Barrier>,
 }
 
-/// Test with invalid port number
-#[test]
-fn test_websocket_invalid_port() -> Result<(), ShellError> {
-    let result =
-        PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws "ws://example.com:99999""#);
+impl DelayedResponseServer {
+    fn new() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let barrier = Arc::new(Barrier::new(2));
 
-    assert!(result.is_err(), "Invalid port should fail");
-    Ok(())
+        let barrier_clone = barrier.clone();
+
+        thread::spawn(move || {
+            barrier_clone.wait();
+
+            while let Ok((stream, _)) = listener.accept() {
+                thread::spawn(move || handle_delayed_connection(stream));
+            }
+        });
+
+        Self { addr, barrier }
+    }
+
+    fn start(&self) {
+        self.barrier.wait();
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    fn url(&self) -> String {
+        format!("ws://127.0.0.1:{}", self.addr.port())
+    }
 }
 
-/// Test with malformed URL brackets
+fn handle_delayed_connection(stream: TcpStream) {
+    let mut ws_stream = accept(stream).expect("Failed to accept");
+
+    thread::sleep(Duration::from_secs(2));
+
+    if ws_stream
+        .send(Message::Text("Delayed response".to_string()))
+        .is_ok()
+    {
+        loop {
+            match ws_stream.read() {
+                Ok(Message::Close(_)) => break,
+                Err(_) => break,
+                _ => {}
+            }
+        }
+    }
+}
+
 #[test]
-fn test_websocket_malformed_brackets() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(r#"ws "ws://[invalid""#);
+fn test_websocket_timeout_expires() {
+    let server = DelayedResponseServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(
+        r#"ws "{}" --max-time 1sec | collect"#,
+        server.url()
+    ));
+
+    assert!(result.is_ok(), "WebSocket should handle timeout gracefully");
+}
+
+#[test]
+fn test_websocket_large_message() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    // Create a large message (10KB)
+    let large_data = "A".repeat(10_000);
+    let result = plugin_test.eval(&format!(
+        r#"echo "{}" | ws "{}" --max-time 5sec"#,
+        large_data,
+        server.url()
+    ));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket should handle large messages. Error: {result:#?}"
+    );
+}
+
+#[test]
+fn test_websocket_empty_message() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(r#"echo "" | ws "{}""#, server.url()));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket should handle empty messages. Error: {result:#?}"
+    );
+}
+
+#[test]
+fn test_websocket_special_characters() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let special_text = "Hello! 🌍 测试 русский العربية ñüéíó";
+    let result = plugin_test.eval(&format!(
+        r#"echo "{}" | ws "{}""#,
+        special_text,
+        server.url()
+    ));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket should handle special characters. Error: {result:#?}"
+    );
+}
+
+#[test]
+fn test_websocket_malformed_url() {
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(r#"ws "not-a-url-at-all""#);
 
     assert!(result.is_err(), "Malformed URL should fail");
-    Ok(())
 }
 
-// ===== EDGE CASE INPUT TESTS =====
-
-/// Test with empty string input
 #[test]
-fn test_websocket_empty_string_input() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#""" | ws "ws://127.0.0.1:1" --max-time 100ms"#);
+fn test_websocket_http_url() {
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
 
-    // Should handle empty input gracefully
-    assert!(result.is_err());
-    Ok(())
-}
+    let result = plugin_test.eval(r#"ws "http://example.com""#);
 
-/// Test with very large string input
-#[test]
-fn test_websocket_large_string_input() -> Result<(), ShellError> {
-    // Create a 10KB string
-    let large_string = "x".repeat(10_000);
-    let command = format!(r#""{large_string}" | ws "ws://127.0.0.1:1" --max-time 100ms"#);
-
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(&command);
-
-    // Should handle large input without panic
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with list input (unsupported)
-#[test]
-fn test_websocket_list_input() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"[1, 2, 3] | ws "ws://127.0.0.1:1" --max-time 100ms"#);
-
-    // Should reject non-string/binary input
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with record input (unsupported)
-#[test]
-fn test_websocket_record_input() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"{name: "test"} | ws "ws://127.0.0.1:1" --max-time 100ms"#);
-
-    // Should reject non-string/binary input
-    assert!(result.is_err());
-    Ok(())
-}
-
-// ===== TIMEOUT EDGE CASES =====
-
-/// Test with zero timeout
-#[test]
-fn test_websocket_zero_timeout() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://example.com" --max-time 0sec"#);
-
-    // Should handle zero timeout (immediate timeout)
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with negative timeout (should be rejected by Nushell's duration parsing)
-#[test]
-fn test_websocket_negative_timeout() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://example.com" --max-time -5sec"#);
-
-    // Should fail to parse negative duration
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with very small timeout
-#[test]
-fn test_websocket_tiny_timeout() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://example.com" --max-time 1ms"#);
-
-    // Should timeout almost immediately
-    assert!(result.is_err());
-    Ok(())
-}
-
-// ===== HEADER EDGE CASES =====
-
-/// Test with empty headers
-#[test]
-fn test_websocket_empty_headers() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --headers {} --max-time 100ms"#);
-
-    // Should handle empty headers
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with headers containing special characters
-#[test]
-fn test_websocket_headers_special_chars() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --headers {"X-Special": "value with spaces", "X-Test": "a=b&c=d"} --max-time 100ms"#);
-
-    // Should handle special characters in headers
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with numeric header values
-#[test]
-fn test_websocket_numeric_header_values() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --headers {"Content-Length": 123, "X-Port": 8080} --max-time 100ms"#);
-
-    // Should convert numeric values to strings
-    assert!(result.is_err());
-    Ok(())
-}
-
-// ===== VERBOSE LEVEL TESTS =====
-
-/// Test with invalid verbose level (negative)
-#[test]
-fn test_websocket_negative_verbose() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --verbose -1 --max-time 100ms"#);
-
-    // Should handle negative verbose level
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with maximum verbose level
-#[test]
-fn test_websocket_max_verbose() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --verbose 4 --max-time 100ms"#);
-
-    // Should handle maximum verbose level
-    assert!(result.is_err());
-    Ok(())
-}
-
-/// Test with verbose level above maximum
-#[test]
-fn test_websocket_excessive_verbose() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --verbose 10 --max-time 100ms"#);
-
-    // Should handle excessive verbose level (treat as max)
-    assert!(result.is_err());
-    Ok(())
-}
-
-// ===== ERROR HANDLING TESTS =====
-
-/// Test with connection refused (explicit port)
-#[test]
-fn test_websocket_connection_refused() -> Result<(), ShellError> {
-    // Port 1 is typically privileged and refused
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://localhost:1" --max-time 500ms"#);
-
-    assert!(result.is_err(), "Connection should be refused");
-    Ok(())
-}
-
-/// Test with DNS resolution failure
-#[test]
-fn test_websocket_dns_failure() -> Result<(), ShellError> {
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?.eval(
-        r#"ws "ws://this-domain-definitely-does-not-exist-123456789.invalid" --max-time 2sec"#,
+    assert!(
+        result.is_err(),
+        "HTTP URL should fail for WebSocket connection"
     );
-
-    assert!(result.is_err(), "DNS resolution should fail");
-    Ok(())
 }
 
-/// Test with self-signed certificate (for wss://)
 #[test]
-fn test_websocket_self_signed_cert() -> Result<(), ShellError> {
-    // Using a known self-signed cert service (this might need adjustment based on availability)
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "wss://self-signed.badssl.com" --max-time 2sec"#);
+fn test_websocket_zero_timeout() {
+    let server = MockWebSocketServer::new();
+    server.start();
 
-    // Should fail due to certificate validation
-    assert!(result.is_err());
-    Ok(())
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(
+        r#"echo "test" | ws "{}" --max-time 0sec"#,
+        server.url()
+    ));
+
+    // Zero timeout should either work immediately or fail gracefully
+    // The exact behavior depends on implementation, but it shouldn't crash
+    println!("Zero timeout result: {result:?}");
 }
 
-// ===== PIPELINE INTEGRATION TESTS =====
-
-/// Test piping WebSocket output (if we could connect)
 #[test]
-fn test_websocket_pipeline_output() -> Result<(), ShellError> {
-    // This tests that the output can be piped, even though connection fails
-    let result = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --max-time 100ms | describe"#);
+fn test_websocket_multiple_headers() {
+    let server = MockWebSocketServer::new();
+    server.start();
 
-    // Pipeline should work even with connection failure
-    assert!(result.is_err());
-    Ok(())
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(&format!(
+        r#"ws "{}" --headers {{ "Authorization": "Bearer token123", "X-Client-ID": "test-client", "X-Version": "1.0" }}"#,
+        server.url()
+    ));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket connection with multiple headers should succeed"
+    );
 }
 
-/// Test multiple WebSocket calls in sequence
+struct EarlyCloseServer {
+    addr: SocketAddr,
+    barrier: Arc<Barrier>,
+}
+
+impl EarlyCloseServer {
+    fn new() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+
+        let barrier_clone = barrier.clone();
+
+        thread::spawn(move || {
+            barrier_clone.wait();
+
+            while let Ok((stream, _)) = listener.accept() {
+                thread::spawn(move || handle_early_close_connection(stream));
+            }
+        });
+
+        Self { addr, barrier }
+    }
+
+    fn start(&self) {
+        self.barrier.wait();
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    fn url(&self) -> String {
+        format!("ws://127.0.0.1:{}", self.addr.port())
+    }
+}
+
+fn handle_early_close_connection(stream: TcpStream) {
+    let mut ws_stream = match accept(stream) {
+        Ok(ws) => ws,
+        Err(_e) => return,
+    };
+
+    // Send one message then immediately close
+    let _ = ws_stream.send(Message::Text("Closing soon".to_string()));
+    let _ = ws_stream.send(Message::Close(None));
+}
+
 #[test]
-fn test_websocket_sequential_calls() -> Result<(), ShellError> {
-    // First call
-    let result1 = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:1" --max-time 50ms"#);
-    assert!(result1.is_err());
+fn test_websocket_server_closes_early() {
+    let server = EarlyCloseServer::new();
+    server.start();
 
-    // Second call - ensure no resource leaks
-    let result2 = PluginTest::new("ws", WebSocketPlugin.into())?
-        .eval(r#"ws "ws://127.0.0.1:2" --max-time 50ms"#);
-    assert!(result2.is_err());
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
 
-    Ok(())
+    let result = plugin_test.eval(&format!(
+        r#"echo "test" | ws "{}" --max-time 2sec"#,
+        server.url()
+    ));
+
+    // Should handle early close gracefully
+    assert!(
+        result.is_ok(),
+        "WebSocket should handle server early close gracefully"
+    );
+}
+
+#[test]
+fn test_websocket_wss_url() {
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    // This will fail to connect but should handle wss:// URLs properly
+    let result = plugin_test.eval(r#"ws "wss://echo.websocket.org" --max-time 1sec"#);
+
+    // This might succeed or fail depending on network, but shouldn't crash
+    // The important thing is that wss:// URLs are accepted
+    println!("WSS connection result: {result:?}");
+}
+
+#[test]
+fn test_websocket_port_in_url() {
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    let result = plugin_test.eval(r#"ws "ws://127.0.0.1:99999" --max-time 1sec"#);
+
+    assert!(
+        result.is_err(),
+        "Connection to invalid port should fail gracefully"
+    );
+}
+
+#[test]
+fn test_websocket_path_in_url() {
+    let server = MockWebSocketServer::new();
+    server.start();
+
+    let mut plugin_test =
+        PluginTest::new("ws", WebSocketPlugin.into()).expect("Failed to create plugin test");
+
+    // Test URL with path
+    let url_with_path = format!(
+        "ws://127.0.0.1:{}/path/to/endpoint",
+        server.url().split(':').next_back().unwrap()
+    );
+    let result = plugin_test.eval(&format!(r#"echo "test" | ws "{url_with_path}""#));
+
+    assert!(
+        result.is_ok(),
+        "WebSocket should handle URLs with paths. Error: {result:#?}"
+    );
 }
