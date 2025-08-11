@@ -96,18 +96,21 @@ echo "Hello 🌍 测试 русский" | ws "wss://echo.websocket.org"
 
 ### Interactive WebSocket Sessions
 
-For interactive WebSocket communication, you can use Nushell's built-in commands to create interactive workflows:
+For interactive WebSocket communication, you can use Nushell's built-in commands to create interactive workflows.
+
+**Note:** When connecting to echo servers or services that keep connections open, use the `--max-time` flag to close the connection after receiving responses. Without it, the connection stays open waiting for more data.
 
 #### Method 1: Using a loop with input
 
 Create an interactive session using Nushell's `loop` and `input` commands:
 
 ```bash
-# Simple interactive loop
+# Simple interactive loop (with timeout for echo servers)
 loop {
   let msg = input "Message (or 'quit' to exit): "
   if $msg == "quit" { break }
-  $msg | ws "wss://echo.websocket.org"
+  # Use timeout to close connection after receiving response
+  $msg | ws "wss://echo.websocket.org" --max-time 2sec
 }
 ```
 
@@ -128,7 +131,8 @@ def ws-interactive [url: string] {
       break
     }
     if $msg != "" {
-      let response = $msg | ws $url
+      # Use timeout to close connection after receiving response
+      let response = $msg | ws $url --max-time 2sec
       print $"Response: ($response)"
     }
   }
