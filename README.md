@@ -94,6 +94,95 @@ echo "test message" | ws "wss://echo.websocket.org" --max-time 30sec --verbose 3
 echo "Hello 🌍 测试 русский" | ws "wss://echo.websocket.org"
 ```
 
+### Interactive WebSocket Sessions
+
+For interactive WebSocket communication, you can use Nushell's built-in commands to create interactive workflows:
+
+#### Method 1: Using a loop with input
+
+Create an interactive session using Nushell's `loop` and `input` commands:
+
+```bash
+# Simple interactive loop
+loop {
+  let msg = input "Message (or 'quit' to exit): "
+  if $msg == "quit" { break }
+  $msg | ws "wss://echo.websocket.org"
+}
+```
+
+#### Method 2: Using a custom function
+
+Define a reusable function for interactive sessions:
+
+```bash
+# Add to your Nushell config
+def ws-interactive [url: string] {
+  print $"Connected to ($url)"
+  print "Type messages to send, or 'quit' to exit"
+
+  loop {
+    let msg = input "> "
+    if $msg == "quit" {
+      print "Disconnected"
+      break
+    }
+    if $msg != "" {
+      let response = $msg | ws $url
+      print $"Response: ($response)"
+    }
+  }
+}
+
+# Use it
+ws-interactive "wss://echo.websocket.org"
+```
+
+#### Method 3: Reading from a file
+
+For automated testing or scripted interactions:
+
+```bash
+# Create a messages file
+echo "message1\nmessage2\nmessage3" | save messages.txt
+
+# Send each line as a separate message
+open messages.txt | lines | each { |msg|
+  $msg | ws "wss://echo.websocket.org"
+  sleep 1sec  # Add delay between messages if needed
+}
+```
+
+#### Method 4: Using a watch file
+
+Create a file-based interactive session:
+
+```bash
+# In one terminal, watch a file and send its contents
+watch input.txt {
+  open input.txt | ws "wss://echo.websocket.org"
+}
+
+# In another terminal, write messages to the file
+echo "Hello WebSocket" | save -f input.txt
+```
+
+#### Method 5: Bi-directional communication with multiple connections
+
+For scenarios requiring separate send and receive channels:
+
+```bash
+# Terminal 1: Listen for messages
+ws "wss://echo.websocket.org" | save -a responses.log
+
+# Terminal 2: Send messages
+loop {
+  let msg = input "> "
+  if $msg == "quit" { break }
+  $msg | ws "wss://echo.websocket.org"
+}
+```
+
 ## Development
 
 This project uses pre-commit hooks to ensure code quality. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
