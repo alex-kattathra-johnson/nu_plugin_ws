@@ -5,7 +5,7 @@ readme = "README.md"
 license = "MIT"
 name = "nu_plugin_ws"
 description = "A Nushell plugin for easily streaming output from websocket endpoints"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2021"
 
 [lib]
@@ -17,13 +17,13 @@ name = "nu_plugin_ws"
 path = "src/main.rs"
 
 [dependencies]
-nu-plugin = "0.106.1"
-nu-protocol = "0.106.1"
+nu-plugin = "0.107.0"
+nu-protocol = "0.107.0"
 tungstenite = { version = "0.24.0", features = ["native-tls"] }
 url = "2.5.3"
 log = "0.4"
 env_logger = "0.11"
 
 [dev-dependencies]
-nu-test-support = "0.106.1"
-nu-plugin-test-support = "0.106.1"
+nu-test-support = "0.107.0"
+nu-plugin-test-support = "0.107.0"
